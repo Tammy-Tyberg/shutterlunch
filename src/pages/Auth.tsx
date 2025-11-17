@@ -10,39 +10,58 @@ import { Utensils } from "lucide-react";
 
 const Auth = () => {
   const navigate = useNavigate();
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const currentUserId = localStorage.getItem("userId");
-    if (currentUserId) {
-      navigate("/");
-    }
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        navigate("/");
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session) {
+        navigate("/");
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, [navigate]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) {
-      toast.error("Please enter your name");
-      return;
-    }
-
     setLoading(true);
+
     try {
-      const { data, error } = await supabase
-        .from("profiles")
-        .insert([{ name: name.trim() }])
-        .select()
-        .single();
+      if (isSignUp) {
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: `${window.location.origin}/`,
+            data: {
+              name: name
+            }
+          }
+        });
 
-      if (error) throw error;
+        if (error) throw error;
+        toast.success("Account created! Please check your email.");
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
 
-      localStorage.setItem("userId", data.id);
-      localStorage.setItem("userName", data.name);
-      toast.success("Welcome to Lunch Squad!");
-      navigate("/onboarding");
+        if (error) throw error;
+        toast.success("Logged in successfully!");
+      }
     } catch (error: any) {
-      toast.error(error.message || "Failed to create profile");
+      toast.error(error.message || "An error occurred");
     } finally {
       setLoading(false);
     }
@@ -57,31 +76,61 @@ const Auth = () => {
           </div>
           <CardTitle className="text-2xl">Lunch Squad</CardTitle>
           <CardDescription>
-            What's your name?
+            {isSignUp ? "Create your account" : "Sign in to your account"}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleAuth} className="space-y-4">
+            {isSignUp && (
+              <div className="space-y-2">
+                <Label htmlFor="name">Name</Label>
+                <Input
+                  id="name"
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required={isSignUp}
+                  placeholder="Your name"
+                />
+              </div>
+            )}
             <div className="space-y-2">
-              <Label htmlFor="name">Name</Label>
+              <Label htmlFor="email">Email</Label>
               <Input
-                id="name"
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 required
-                placeholder="Enter your name"
-                autoFocus
+                placeholder="your@email.com"
               />
             </div>
-            <Button
-              type="submit"
-              className="w-full"
-              disabled={loading || !name.trim()}
-            >
-              {loading ? "Getting Started..." : "Get Started"}
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                placeholder="••••••••"
+                minLength={6}
+              />
+            </div>
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? "Loading..." : isSignUp ? "Sign Up" : "Sign In"}
             </Button>
           </form>
+          <div className="mt-4 text-center text-sm">
+            <button
+              onClick={() => setIsSignUp(!isSignUp)}
+              className="text-primary hover:underline"
+            >
+              {isSignUp
+                ? "Already have an account? Sign in"
+                : "Don't have an account? Sign up"}
+            </button>
+          </div>
         </CardContent>
       </Card>
     </div>

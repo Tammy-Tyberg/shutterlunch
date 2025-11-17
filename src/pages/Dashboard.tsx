@@ -30,13 +30,14 @@ const Dashboard = () => {
   const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    const currentUserId = localStorage.getItem("userId");
-    if (!currentUserId) {
-      navigate("/auth");
-    } else {
-      setUserId(currentUserId);
-      checkOnboarding(currentUserId);
-    }
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) {
+        navigate("/auth");
+      } else {
+        setUserId(session.user.id);
+        checkOnboarding(session.user.id);
+      }
+    });
   }, [navigate]);
 
   const checkOnboarding = async (uid: string) => {
@@ -169,9 +170,8 @@ const Dashboard = () => {
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem("userId");
-    localStorage.removeItem("userName");
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     navigate("/auth");
   };
 
