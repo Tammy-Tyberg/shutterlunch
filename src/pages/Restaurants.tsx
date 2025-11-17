@@ -22,14 +22,13 @@ const Restaurants = () => {
   const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) {
-        navigate("/auth");
-      } else {
-        setUserId(session.user.id);
-        loadData(session.user.id);
-      }
-    });
+    const currentUserId = localStorage.getItem("userId");
+    if (!currentUserId) {
+      navigate("/auth");
+    } else {
+      setUserId(currentUserId);
+      loadData(currentUserId);
+    }
   }, [navigate]);
 
   const loadData = async (uid: string) => {
