@@ -123,7 +123,8 @@ const Restaurants = () => {
   };
 
   const handleContinue = () => {
-    // Allow continuing even with no favorites
+    // Mark that user has visited restaurants page
+    sessionStorage.setItem('visited_restaurants', 'true');
     navigate("/");
   };
 

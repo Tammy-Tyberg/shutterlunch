@@ -83,6 +83,25 @@ const Dashboard = () => {
         return;
       }
 
+      // Check if user visited restaurants page - if they have preferences but no favorites
+      // and haven't been to restaurants page, redirect them there
+      const { data: favorites } = await supabase
+        .from("user_favorites")
+        .select("*")
+        .eq("user_id", uid)
+        .limit(1);
+
+      // Only redirect to restaurants if user has never been there (no favorites at all)
+      // and hasn't explicitly chosen to skip
+      const hasVisitedRestaurants = sessionStorage.getItem('visited_restaurants');
+      
+      if (!favorites || favorites.length === 0) {
+        if (!hasVisitedRestaurants) {
+          navigate("/restaurants");
+          return;
+        }
+      }
+
       loadDashboardData(uid);
     } catch (error: any) {
       toast.error(error.message || "Failed to load data");
@@ -187,6 +206,7 @@ const Dashboard = () => {
         .in("user_id", userIds);
 
       if (!allFavorites || allFavorites.length === 0) {
+        console.log("No favorites found for attending users");
         setNoMatchFound(true);
         return;
       }
@@ -304,6 +324,7 @@ const Dashboard = () => {
   const handleChooseRandom = async () => {
     if (!userId) return;
     
+    console.log("Choose random clicked");
     const today = new Date().toISOString().split("T")[0];
     const { data: attendingUsers } = await supabase
       .from("daily_attendance")
@@ -311,7 +332,12 @@ const Dashboard = () => {
       .eq("date", today)
       .eq("is_attending", true);
 
-    if (!attendingUsers || attendingUsers.length === 0) return;
+    console.log("Attending users:", attendingUsers);
+
+    if (!attendingUsers || attendingUsers.length === 0) {
+      toast.error("No one is attending today");
+      return;
+    }
 
     const userIds = attendingUsers.map((u) => u.user_id);
     const { data: allFavorites } = await supabase
@@ -319,14 +345,23 @@ const Dashboard = () => {
       .select("restaurant_id, restaurants(id, name, cuisine_types, dietary_restrictions, description, rating)")
       .in("user_id", userIds);
 
-    if (!allFavorites || allFavorites.length === 0) return;
+    console.log("All favorites:", allFavorites);
+
+    if (!allFavorites || allFavorites.length === 0) {
+      toast.error("No favorite restaurants found");
+      return;
+    }
 
     const uniqueRestaurants = Array.from(
       new Map(allFavorites.map((fav: any) => [fav.restaurants.id, fav.restaurants])).values()
     );
 
+    console.log("Unique restaurants:", uniqueRestaurants);
+
     const randomRestaurant = uniqueRestaurants[Math.floor(Math.random() * uniqueRestaurants.length)] as any;
     
+    console.log("Selected restaurant:", randomRestaurant);
+
     setRecommendedRestaurant({
       ...randomRestaurant,
       score: 0
@@ -346,6 +381,8 @@ const Dashboard = () => {
 
     const today = new Date().toISOString().split("T")[0];
 
+    console.log("Toggle attendance:", checked, "User:", userId);
+
     try {
       const { error } = await supabase.from("daily_attendance").upsert({
         user_id: userId,
@@ -353,14 +390,19 @@ const Dashboard = () => {
         is_attending: checked,
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error("Attendance error:", error);
+        throw error;
+      }
 
+      console.log("Attendance updated successfully");
       setIsAttending(checked);
       toast.success(checked ? "You're attending today!" : "Attendance updated");
       
       // Reload data to update the attendees list and recalculate recommendation
       await loadDashboardData(userId);
     } catch (error: any) {
+      console.error("Failed to update attendance:", error);
       toast.error(error.message || "Failed to update attendance");
     }
   };
