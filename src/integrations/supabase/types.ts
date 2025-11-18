@@ -18,7 +18,6 @@ export type Database = {
         Row: {
           created_at: string | null
           date: string
-          feedback: string | null
           has_rated: boolean | null
           id: string
           is_attending: boolean | null
@@ -27,7 +26,6 @@ export type Database = {
         Insert: {
           created_at?: string | null
           date?: string
-          feedback?: string | null
           has_rated?: boolean | null
           id?: string
           is_attending?: boolean | null
@@ -36,7 +34,6 @@ export type Database = {
         Update: {
           created_at?: string | null
           date?: string
-          feedback?: string | null
           has_rated?: boolean | null
           id?: string
           is_attending?: boolean | null
