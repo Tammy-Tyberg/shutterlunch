@@ -205,68 +205,88 @@ const Dashboard = () => {
         }
       });
 
+      // Get all favorites from attending users
       const { data: allFavorites } = await supabase
         .from("user_favorites")
-        .select("restaurant_id, restaurants(id, name, cuisine_types, dietary_restrictions, description, rating)")
+        .select("restaurant_id, user_id, restaurants(id, name, cuisine_types, dietary_restrictions, description, rating)")
         .in("user_id", userIds);
 
+      // If no favorites, get all restaurants
+      let restaurantsToScore: any[] = [];
+      
       if (!allFavorites || allFavorites.length === 0) {
-        console.log("No favorites found for attending users");
-        setNoMatchFound(true);
-        return;
-      }
-
-      // Filter restaurants that match ALL users' dietary restrictions and cuisine preferences
-      const matchingRestaurants = allFavorites.filter((fav: any) => {
-        const restaurant = fav.restaurants;
-        if (!restaurant) return false;
-
-        // Check if restaurant matches all users' preferences
-        for (const userId of userIds) {
-          const prefs = userPrefs[userId];
-          if (!prefs) continue;
-
-          // Check dietary restrictions
-          if (prefs.dietary.length > 0) {
-            const hasMatchingDietary = prefs.dietary.some((diet) =>
-              restaurant.dietary_restrictions?.includes(diet)
-            );
-            if (!hasMatchingDietary) return false;
-          }
-
-          // Check cuisine types
-          if (prefs.cuisine.length > 0) {
-            const hasMatchingCuisine = prefs.cuisine.some((cuisine) =>
-              restaurant.cuisine_types?.includes(cuisine)
-            );
-            if (!hasMatchingCuisine) return false;
-          }
+        const { data: allRestaurants } = await supabase
+          .from("restaurants")
+          .select("*");
+        
+        if (allRestaurants) {
+          restaurantsToScore = allRestaurants.map(r => ({ restaurants: r, user_id: null }));
         }
+      } else {
+        restaurantsToScore = allFavorites;
+      }
 
-        return true;
-      });
-
-      if (matchingRestaurants.length === 0) {
+      if (restaurantsToScore.length === 0) {
         setNoMatchFound(true);
         return;
       }
 
-      const restaurantScores: { [key: string]: { count: number; data: any } } = {};
+      // Score restaurants based on how many users they match
+      const restaurantScores: { [key: string]: { matchCount: number; favoriteCount: number; data: any } } = {};
 
-      matchingRestaurants.forEach((fav: any) => {
-        const restaurant = fav.restaurants;
+      restaurantsToScore.forEach((item: any) => {
+        const restaurant = item.restaurants;
         if (!restaurant) return;
 
         if (!restaurantScores[restaurant.id]) {
-          restaurantScores[restaurant.id] = { count: 0, data: restaurant };
+          restaurantScores[restaurant.id] = { matchCount: 0, favoriteCount: 0, data: restaurant };
         }
-        restaurantScores[restaurant.id].count++;
+
+        // Count if this is a favorite
+        if (item.user_id) {
+          restaurantScores[restaurant.id].favoriteCount++;
+        }
+
+        // Count how many users' preferences this restaurant matches
+        for (const userId of userIds) {
+          const prefs = userPrefs[userId];
+          if (!prefs || (prefs.dietary.length === 0 && prefs.cuisine.length === 0)) {
+            // User has no preferences, counts as a match
+            restaurantScores[restaurant.id].matchCount++;
+            continue;
+          }
+
+          let matches = true;
+
+          // Check dietary restrictions - must match all if user has them
+          if (prefs.dietary.length > 0) {
+            const hasMatchingDietary = prefs.dietary.every((diet) =>
+              restaurant.dietary_restrictions?.includes(diet)
+            );
+            if (!hasMatchingDietary) matches = false;
+          }
+
+          // Check cuisine types - must match at least one if user has them
+          if (matches && prefs.cuisine.length > 0) {
+            const hasMatchingCuisine = prefs.cuisine.some((cuisine) =>
+              restaurant.cuisine_types?.includes(cuisine)
+            );
+            if (!hasMatchingCuisine) matches = false;
+          }
+
+          if (matches) {
+            restaurantScores[restaurant.id].matchCount++;
+          }
+        }
       });
 
+      // Score: prioritize restaurants that match more users, then favorites, then rating
       const scored = Object.values(restaurantScores)
         .map((r) => ({
           ...r.data,
-          score: (r.count / userIds.length) * 100 + r.data.rating * 10,
+          score: (r.matchCount * 1000) + (r.favoriteCount * 100) + (r.data.rating * 10),
+          matchCount: r.matchCount,
+          totalUsers: userIds.length
         }))
         .sort((a, b) => b.score - a.score);
 
