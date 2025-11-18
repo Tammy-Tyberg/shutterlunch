@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { LogOut, Users, Star, TrendingUp, Settings, ThumbsUp, Shuffle, Pencil } from "lucide-react";
+import { LogOut, Users, Star, TrendingUp, Settings, ThumbsUp, ThumbsDown, Shuffle, Pencil } from "lucide-react";
 import { EditRestaurantDialog } from "@/components/EditRestaurantDialog";
 
 interface AttendingUser {
@@ -32,7 +32,8 @@ const Dashboard = () => {
   const [userId, setUserId] = useState<string | null>(null);
   const [userName, setUserName] = useState<string>("");
   const [userRating, setUserRating] = useState(0);
-  const [hasLiked, setHasLiked] = useState(false);
+  const [feedbackStatus, setFeedbackStatus] = useState<"liked" | "disliked" | null>(null);
+  const [hasSubmittedFeedback, setHasSubmittedFeedback] = useState(false);
   const [noMatchFound, setNoMatchFound] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
 
@@ -127,12 +128,14 @@ const Dashboard = () => {
 
       const { data: attendance } = await supabase
         .from("daily_attendance")
-        .select("is_attending")
+        .select("is_attending, has_rated")
         .eq("user_id", uid)
         .eq("date", today)
         .maybeSingle();
 
       setIsAttending(attendance?.is_attending || false);
+      setHasSubmittedFeedback(attendance?.has_rated || false);
+      setFeedbackStatus(null);
 
       const { data: attendingData } = await supabase
         .from("daily_attendance")
@@ -202,90 +205,68 @@ const Dashboard = () => {
         }
       });
 
-      // Get all favorites from attending users
       const { data: allFavorites } = await supabase
         .from("user_favorites")
-        .select("restaurant_id, user_id, restaurants(id, name, cuisine_types, dietary_restrictions, description, rating)")
+        .select("restaurant_id, restaurants(id, name, cuisine_types, dietary_restrictions, description, rating)")
         .in("user_id", userIds);
 
-      // If no favorites, get all restaurants
-      let restaurantsToScore: any[] = [];
-      
       if (!allFavorites || allFavorites.length === 0) {
-        const { data: allRestaurants } = await supabase
-          .from("restaurants")
-          .select("*");
-        
-        if (allRestaurants) {
-          restaurantsToScore = allRestaurants.map(r => ({ restaurants: r, user_id: null }));
-        }
-      } else {
-        restaurantsToScore = allFavorites;
-      }
-
-      if (restaurantsToScore.length === 0) {
+        console.log("No favorites found for attending users");
         setNoMatchFound(true);
         return;
       }
 
-      // Score restaurants based on how many users they match
-      const restaurantScores: { [key: string]: { matchCount: number; favoriteCount: number; data: any } } = {};
+      // Filter restaurants that match ALL users' dietary restrictions and cuisine preferences
+      const matchingRestaurants = allFavorites.filter((fav: any) => {
+        const restaurant = fav.restaurants;
+        if (!restaurant) return false;
 
-      restaurantsToScore.forEach((item: any) => {
-        const restaurant = item.restaurants;
+        // Check if restaurant matches all users' preferences
+        for (const userId of userIds) {
+          const prefs = userPrefs[userId];
+          if (!prefs) continue;
+
+          // Check dietary restrictions
+          if (prefs.dietary.length > 0) {
+            const hasMatchingDietary = prefs.dietary.some((diet) =>
+              restaurant.dietary_restrictions?.includes(diet)
+            );
+            if (!hasMatchingDietary) return false;
+          }
+
+          // Check cuisine types
+          if (prefs.cuisine.length > 0) {
+            const hasMatchingCuisine = prefs.cuisine.some((cuisine) =>
+              restaurant.cuisine_types?.includes(cuisine)
+            );
+            if (!hasMatchingCuisine) return false;
+          }
+        }
+
+        return true;
+      });
+
+      if (matchingRestaurants.length === 0) {
+        setNoMatchFound(true);
+        return;
+      }
+
+      const restaurantScores: { [key: string]: { count: number; data: any } } = {};
+
+      matchingRestaurants.forEach((fav: any) => {
+        const restaurant = fav.restaurants;
         if (!restaurant) return;
 
         if (!restaurantScores[restaurant.id]) {
-          restaurantScores[restaurant.id] = { matchCount: 0, favoriteCount: 0, data: restaurant };
+          restaurantScores[restaurant.id] = { count: 0, data: restaurant };
         }
-
-        // Count if this is a favorite
-        if (item.user_id) {
-          restaurantScores[restaurant.id].favoriteCount++;
-        }
-
-        // Count how many users' preferences this restaurant matches
-        for (const userId of userIds) {
-          const prefs = userPrefs[userId];
-          if (!prefs || (prefs.dietary.length === 0 && prefs.cuisine.length === 0)) {
-            // User has no preferences, counts as a match
-            restaurantScores[restaurant.id].matchCount++;
-            continue;
-          }
-
-          let matches = true;
-
-          // Check dietary restrictions - must match all if user has them
-          if (prefs.dietary.length > 0) {
-            const restaurantDietary = restaurant.dietary_restrictions || [];
-            const hasMatchingDietary = prefs.dietary.every((diet) =>
-              restaurantDietary.includes(diet)
-            );
-            if (!hasMatchingDietary) matches = false;
-          }
-
-          // Check cuisine types - must match at least one if user has them
-          if (matches && prefs.cuisine.length > 0) {
-            const restaurantCuisine = restaurant.cuisine_types || [];
-            const hasMatchingCuisine = prefs.cuisine.some((cuisine) =>
-              restaurantCuisine.includes(cuisine)
-            );
-            if (!hasMatchingCuisine) matches = false;
-          }
-
-          if (matches) {
-            restaurantScores[restaurant.id].matchCount++;
-          }
-        }
+        restaurantScores[restaurant.id].count++;
       });
 
-      // Score: prioritize restaurants that match more users, then favorites, then rating
       const scored = Object.values(restaurantScores)
         .map((r) => ({
           ...r.data,
-          score: (r.matchCount * 1000) + (r.favoriteCount * 100) + (r.data.rating * 10),
-          matchCount: r.matchCount,
-          totalUsers: userIds.length
+          score: (r.count / userIds.length) * 100 + r.data.rating * 10,
         }))
         .sort((a, b) => b.score - a.score);
 
@@ -305,15 +286,55 @@ const Dashboard = () => {
     }
   };
 
-  const handleLike = () => {
-    setHasLiked(true);
-    toast.success("Great! Rate your experience");
+  const handleFeedback = async (choice: "liked" | "disliked") => {
+    if (!userId) return;
+    if (hasSubmittedFeedback) {
+      toast.error("You've already shared feedback for today's lunch.");
+      return;
+    }
+    if (!isAttending) {
+      toast.error("Please mark yourself as attending before sharing feedback.");
+      return;
+    }
+
+    const today = new Date().toISOString().split("T")[0];
+
+    try {
+      const { error } = await supabase
+        .from("daily_attendance")
+        .upsert(
+          {
+            user_id: userId,
+            date: today,
+            is_attending: true,
+            has_rated: true,
+            feedback: choice,
+          },
+          { onConflict: "user_id,date" }
+        );
+
+      if (error) throw error;
+
+      setHasSubmittedFeedback(true);
+      setFeedbackStatus(choice);
+      setUserRating(0);
+      toast.success(
+        choice === "liked"
+          ? "Glad you enjoyed it! Feel free to add a rating."
+          : "Thanks for the feedback! We'll keep that in mind."
+      );
+    } catch (error: any) {
+      toast.error(error.message || "Failed to submit feedback");
+    }
   };
 
   const handleReshuffle = async () => {
     if (!userId) return;
+    if (hasSubmittedFeedback) {
+      toast.error("Lunch feedback already submitted for today.");
+      return;
+    }
     
-    setHasLiked(false);
     setUserRating(0);
     const currentRestaurantId = recommendedRestaurant?.id;
     setRecommendedRestaurant(null);
@@ -430,7 +451,7 @@ const Dashboard = () => {
   };
 
   const handleRating = async (rating: number) => {
-    if (!recommendedRestaurant) return;
+    if (!recommendedRestaurant || feedbackStatus !== "liked") return;
     
     setUserRating(rating);
     
@@ -446,6 +467,10 @@ const Dashboard = () => {
 
   const handleChooseRandom = async () => {
     if (!userId) return;
+    if (hasSubmittedFeedback) {
+      toast.error("Lunch feedback already submitted for today.");
+      return;
+    }
     
     console.log("Choose random clicked");
     const today = new Date().toISOString().split("T")[0];
@@ -501,17 +526,26 @@ const Dashboard = () => {
 
   const toggleAttendance = async (checked: boolean) => {
     if (!userId) return;
+    if (hasSubmittedFeedback) {
+      toast.error("Lunch feedback already submitted for today. Attendance is locked.");
+      return;
+    }
 
     const today = new Date().toISOString().split("T")[0];
 
     console.log("Toggle attendance:", checked, "User:", userId);
 
     try {
-      const { error } = await supabase.from("daily_attendance").upsert({
-        user_id: userId,
-        date: today,
-        is_attending: checked,
-      });
+      const { error } = await supabase
+        .from("daily_attendance")
+        .upsert(
+          {
+            user_id: userId,
+            date: today,
+            is_attending: checked,
+          },
+          { onConflict: "user_id,date" }
+        );
 
       if (error) {
         console.error("Attendance error:", error);
@@ -577,13 +611,22 @@ const Dashboard = () => {
             </CardHeader>
             <CardContent>
               <div className="flex items-center justify-between gap-4">
-                <Label htmlFor="attendance" className="text-lg">
-                  I'm attending today
-                </Label>
+                <div>
+                  <Label htmlFor="attendance" className="text-lg">
+                    I'm attending today
+                  </Label>
+                  {hasSubmittedFeedback && (
+                    <p className="text-sm text-muted-foreground">
+                      Feedback submitted – attendance locked for today.
+                    </p>
+                  )}
+                </div>
                 <Switch
                   id="attendance"
                   checked={isAttending}
                   onCheckedChange={toggleAttendance}
+                  disabled={hasSubmittedFeedback}
+                  aria-disabled={hasSubmittedFeedback}
                 />
               </div>
             </CardContent>
@@ -689,18 +732,38 @@ const Dashboard = () => {
                     </div>
                   </div>
 
-                  {!hasLiked ? (
-                    <div className="flex gap-2 pt-2">
-                      <Button onClick={handleLike} className="flex-1 gap-2">
-                        <ThumbsUp className="h-4 w-4" />
-                        Like This
-                      </Button>
-                      <Button onClick={handleReshuffle} variant="outline" className="flex-1 gap-2">
+                  {feedbackStatus === null ? (
+                    <div className="space-y-2 pt-2">
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <Button
+                          onClick={() => handleFeedback("liked")}
+                          className="flex-1 gap-2"
+                          disabled={!isAttending || hasSubmittedFeedback}
+                        >
+                          <ThumbsUp className="h-4 w-4" />
+                          Like It
+                        </Button>
+                        <Button
+                          onClick={() => handleFeedback("disliked")}
+                          variant="outline"
+                          className="flex-1 gap-2"
+                          disabled={!isAttending || hasSubmittedFeedback}
+                        >
+                          <ThumbsDown className="h-4 w-4" />
+                          Don't Like
+                        </Button>
+                      </div>
+                      <Button
+                        onClick={handleReshuffle}
+                        variant="ghost"
+                        className="w-full gap-2"
+                        disabled={hasSubmittedFeedback}
+                      >
                         <Shuffle className="h-4 w-4" />
                         Reshuffle
                       </Button>
                     </div>
-                  ) : (
+                  ) : feedbackStatus === "liked" ? (
                     <div className="space-y-2 pt-2">
                       <Label>Rate your experience</Label>
                       <div className="flex gap-1">
@@ -717,6 +780,10 @@ const Dashboard = () => {
                         ))}
                       </div>
                     </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground pt-2">
+                      Thanks for the feedback! We'll use it to improve tomorrow's recommendation.
+                    </p>
                   )}
                 </div>
               </CardContent>
