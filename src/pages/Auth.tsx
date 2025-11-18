@@ -15,6 +15,7 @@ const Auth = () => {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
+  const [emailError, setEmailError] = useState("");
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -34,6 +35,7 @@ const Auth = () => {
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
+    setEmailError("");
     setLoading(true);
 
     try {
@@ -41,7 +43,8 @@ const Auth = () => {
       const requiredDomain = "@shutterfly.com";
 
       if (!normalizedEmail.endsWith(requiredDomain)) {
-        throw new Error(`Please use your ${requiredDomain} email address to sign in.`);
+        setEmailError(`Please use your ${requiredDomain} email address to sign in.`);
+        return;
       }
 
       if (isSignUp) {
@@ -110,7 +113,14 @@ const Auth = () => {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 placeholder="your@email.com"
+                aria-describedby={emailError ? "email-error" : undefined}
+                aria-invalid={!!emailError}
               />
+              {emailError && (
+                <p id="email-error" className="text-sm text-destructive">
+                  {emailError}
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
