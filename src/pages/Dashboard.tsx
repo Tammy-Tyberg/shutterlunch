@@ -188,7 +188,7 @@ const Dashboard = () => {
       <div className="max-w-4xl mx-auto py-8">
         <div className="flex justify-between items-center mb-8">
           <div>
-            <h1 className="text-4xl font-bold mb-2">Lunch Squad</h1>
+            <h1 className="text-4xl font-bold mb-2">ShutterLunch</h1>
             <p className="text-muted-foreground">Where should we eat today?</p>
           </div>
           <Button variant="outline" onClick={handleLogout}>
