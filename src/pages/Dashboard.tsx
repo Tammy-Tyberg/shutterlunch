@@ -291,6 +291,7 @@ const Dashboard = () => {
     
     setHasLiked(false);
     setUserRating(0);
+    const currentRestaurantId = recommendedRestaurant?.id;
     setRecommendedRestaurant(null);
     
     const today = new Date().toISOString().split("T")[0];
@@ -301,8 +302,106 @@ const Dashboard = () => {
       .delete()
       .eq("date", today);
     
-    // Recalculate
-    await calculateRecommendation(userId, today);
+    // Get attending users
+    const { data: attendingUsers } = await supabase
+      .from("daily_attendance")
+      .select("user_id")
+      .eq("date", today)
+      .eq("is_attending", true);
+
+    if (!attendingUsers || attendingUsers.length === 0) return;
+
+    const userIds = attendingUsers.map((u) => u.user_id);
+
+    // Get all user preferences
+    const { data: allPreferences } = await supabase
+      .from("user_preferences")
+      .select("user_id, preference_type, preference_value")
+      .in("user_id", userIds);
+
+    // Group preferences by user
+    const userPrefs: { [userId: string]: { dietary: string[], cuisine: string[] } } = {};
+    allPreferences?.forEach((pref) => {
+      if (!userPrefs[pref.user_id]) {
+        userPrefs[pref.user_id] = { dietary: [], cuisine: [] };
+      }
+      if (pref.preference_type === "dietary") {
+        userPrefs[pref.user_id].dietary.push(pref.preference_value);
+      } else if (pref.preference_type === "cuisine") {
+        userPrefs[pref.user_id].cuisine.push(pref.preference_value);
+      }
+    });
+
+    const { data: allFavorites } = await supabase
+      .from("user_favorites")
+      .select("restaurant_id, restaurants(id, name, cuisine_types, dietary_restrictions, description, rating)")
+      .in("user_id", userIds);
+
+    if (!allFavorites || allFavorites.length === 0) {
+      setNoMatchFound(true);
+      return;
+    }
+
+    // Filter restaurants that match ALL users' dietary restrictions and cuisine preferences
+    const matchingRestaurants = allFavorites.filter((fav: any) => {
+      const restaurant = fav.restaurants;
+      if (!restaurant) return false;
+
+      // Check if restaurant matches all users' preferences
+      for (const userId of userIds) {
+        const prefs = userPrefs[userId];
+        if (!prefs) continue;
+
+        // Check dietary restrictions
+        if (prefs.dietary.length > 0) {
+          const hasMatchingDietary = prefs.dietary.some((diet) =>
+            restaurant.dietary_restrictions?.includes(diet)
+          );
+          if (!hasMatchingDietary) return false;
+        }
+
+        // Check cuisine types
+        if (prefs.cuisine.length > 0) {
+          const hasMatchingCuisine = prefs.cuisine.some((cuisine) =>
+            restaurant.cuisine_types?.includes(cuisine)
+          );
+          if (!hasMatchingCuisine) return false;
+        }
+      }
+
+      return true;
+    });
+
+    if (matchingRestaurants.length === 0) {
+      setNoMatchFound(true);
+      return;
+    }
+
+    // Get unique restaurants
+    const uniqueRestaurants = Array.from(
+      new Map(matchingRestaurants.map((fav: any) => [fav.restaurants.id, fav.restaurants])).values()
+    );
+
+    // Filter out current restaurant if there are alternatives
+    let availableRestaurants = uniqueRestaurants;
+    if (currentRestaurantId && uniqueRestaurants.length > 1) {
+      availableRestaurants = uniqueRestaurants.filter((r: any) => r.id !== currentRestaurantId);
+    }
+
+    // Pick random from available
+    const randomRestaurant = availableRestaurants[Math.floor(Math.random() * availableRestaurants.length)] as any;
+    
+    setRecommendedRestaurant({
+      ...randomRestaurant,
+      score: 0
+    });
+    setNoMatchFound(false);
+
+    await supabase.from("daily_restaurant_selection").upsert({
+      date: today,
+      restaurant_id: randomRestaurant.id,
+    });
+
     toast.success("Reshuffled recommendation for everyone");
   };
 
