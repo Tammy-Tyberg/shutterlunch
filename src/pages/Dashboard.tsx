@@ -347,17 +347,11 @@ const Dashboard = () => {
     const today = new Date().toISOString().split("T")[0];
 
     try {
-      const { error } = await supabase.from("daily_attendance").upsert(
-        {
-          user_id: userId,
-          date: today,
-          is_attending: checked,
-          has_rated: false, // Ensure has_rated is set
-        },
-        {
-          onConflict: 'user_id,date' // Specify conflict columns
-        }
-      );
+      const { error } = await supabase.from("daily_attendance").upsert({
+        user_id: userId,
+        date: today,
+        is_attending: checked,
+      });
 
       if (error) throw error;
 
