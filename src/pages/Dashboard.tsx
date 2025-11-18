@@ -6,7 +6,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { LogOut, Users, Star, TrendingUp, Settings, ThumbsUp, ThumbsDown, Shuffle } from "lucide-react";
+import { LogOut, Users, Star, TrendingUp, Settings, ThumbsUp, ThumbsDown, Shuffle, Pencil } from "lucide-react";
+import { EditRestaurantDialog } from "@/components/EditRestaurantDialog";
 
 interface AttendingUser {
   name: string;
@@ -34,6 +35,7 @@ const Dashboard = () => {
   const [feedbackStatus, setFeedbackStatus] = useState<"liked" | "disliked" | null>(null);
   const [hasSubmittedFeedback, setHasSubmittedFeedback] = useState(false);
   const [noMatchFound, setNoMatchFound] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -126,19 +128,14 @@ const Dashboard = () => {
 
       const { data: attendance } = await supabase
         .from("daily_attendance")
-        .select("is_attending, has_rated, feedback")
+        .select("is_attending, has_rated")
         .eq("user_id", uid)
         .eq("date", today)
         .maybeSingle();
 
       setIsAttending(attendance?.is_attending || false);
       setHasSubmittedFeedback(attendance?.has_rated || false);
-      const feedbackValue = attendance?.feedback;
-      if (feedbackValue === "liked" || feedbackValue === "disliked") {
-        setFeedbackStatus(feedbackValue);
-      } else {
-        setFeedbackStatus(null);
-      }
+      setFeedbackStatus(null);
 
       const { data: attendingData } = await supabase
         .from("daily_attendance")
@@ -687,13 +684,25 @@ const Dashboard = () => {
           ) : recommendedRestaurant && (
             <Card className="border-2 border-primary">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <TrendingUp className="h-5 w-5" />
-                  Today's Recommendation
-                </CardTitle>
-                <CardDescription>
-                  Based on everyone's preferences and favorites
-                </CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <TrendingUp className="h-5 w-5" />
+                      Today's Recommendation
+                    </CardTitle>
+                    <CardDescription>
+                      Based on everyone's preferences and favorites
+                    </CardDescription>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setEditDialogOpen(true)}
+                    title="Edit restaurant details"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
@@ -782,6 +791,25 @@ const Dashboard = () => {
           )}
         </div>
       </div>
+
+      {recommendedRestaurant && (
+        <EditRestaurantDialog
+          open={editDialogOpen}
+          onOpenChange={setEditDialogOpen}
+          restaurant={{
+            id: recommendedRestaurant.id,
+            name: recommendedRestaurant.name,
+            description: recommendedRestaurant.description,
+            cuisine_types: recommendedRestaurant.cuisine_types,
+            dietary_restrictions: recommendedRestaurant.dietary_restrictions,
+          }}
+          onUpdate={() => {
+            if (userId) {
+              loadDashboardData(userId);
+            }
+          }}
+        />
+      )}
     </div>
   );
 };
