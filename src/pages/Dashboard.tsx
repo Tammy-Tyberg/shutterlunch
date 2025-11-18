@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { LogOut, Users, Star, TrendingUp, Settings } from "lucide-react";
+import { LogOut, Users, Star, TrendingUp, Settings, ThumbsUp, Shuffle } from "lucide-react";
 
 interface AttendingUser {
   name: string;
@@ -29,6 +29,9 @@ const Dashboard = () => {
   const [recommendedRestaurant, setRecommendedRestaurant] = useState<RecommendedRestaurant | null>(null);
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
+  const [userRating, setUserRating] = useState(0);
+  const [hasLiked, setHasLiked] = useState(false);
+  const [noMatchFound, setNoMatchFound] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -104,6 +107,8 @@ const Dashboard = () => {
 
   const calculateRecommendation = async (uid: string, date: string) => {
     try {
+      setNoMatchFound(false);
+      
       // First check if there's already a daily selection
       const { data: existingSelection } = await supabase
         .from("daily_restaurant_selection")
@@ -115,7 +120,7 @@ const Dashboard = () => {
         const restaurant = existingSelection.restaurants as any;
         setRecommendedRestaurant({
           ...restaurant,
-          score: 0 // We'll calculate this for display
+          score: 0
         });
         return;
       }
@@ -131,16 +136,73 @@ const Dashboard = () => {
 
       const userIds = attendingUsers.map((u) => u.user_id);
 
+      // Get all user preferences
+      const { data: allPreferences } = await supabase
+        .from("user_preferences")
+        .select("user_id, preference_type, preference_value")
+        .in("user_id", userIds);
+
+      // Group preferences by user
+      const userPrefs: { [userId: string]: { dietary: string[], cuisine: string[] } } = {};
+      allPreferences?.forEach((pref) => {
+        if (!userPrefs[pref.user_id]) {
+          userPrefs[pref.user_id] = { dietary: [], cuisine: [] };
+        }
+        if (pref.preference_type === "dietary") {
+          userPrefs[pref.user_id].dietary.push(pref.preference_value);
+        } else if (pref.preference_type === "cuisine") {
+          userPrefs[pref.user_id].cuisine.push(pref.preference_value);
+        }
+      });
+
       const { data: allFavorites } = await supabase
         .from("user_favorites")
         .select("restaurant_id, restaurants(id, name, cuisine_types, dietary_restrictions, description, rating)")
         .in("user_id", userIds);
 
-      if (!allFavorites || allFavorites.length === 0) return;
+      if (!allFavorites || allFavorites.length === 0) {
+        setNoMatchFound(true);
+        return;
+      }
+
+      // Filter restaurants that match ALL users' dietary restrictions and cuisine preferences
+      const matchingRestaurants = allFavorites.filter((fav: any) => {
+        const restaurant = fav.restaurants;
+        if (!restaurant) return false;
+
+        // Check if restaurant matches all users' preferences
+        for (const userId of userIds) {
+          const prefs = userPrefs[userId];
+          if (!prefs) continue;
+
+          // Check dietary restrictions
+          if (prefs.dietary.length > 0) {
+            const hasMatchingDietary = prefs.dietary.some((diet) =>
+              restaurant.dietary_restrictions?.includes(diet)
+            );
+            if (!hasMatchingDietary) return false;
+          }
+
+          // Check cuisine types
+          if (prefs.cuisine.length > 0) {
+            const hasMatchingCuisine = prefs.cuisine.some((cuisine) =>
+              restaurant.cuisine_types?.includes(cuisine)
+            );
+            if (!hasMatchingCuisine) return false;
+          }
+        }
+
+        return true;
+      });
+
+      if (matchingRestaurants.length === 0) {
+        setNoMatchFound(true);
+        return;
+      }
 
       const restaurantScores: { [key: string]: { count: number; data: any } } = {};
 
-      allFavorites.forEach((fav: any) => {
+      matchingRestaurants.forEach((fav: any) => {
         const restaurant = fav.restaurants;
         if (!restaurant) return;
 
@@ -161,15 +223,96 @@ const Dashboard = () => {
         const topRestaurant = scored[0];
         setRecommendedRestaurant(topRestaurant);
 
-        // Save the selection to the database so everyone sees it
         await supabase.from("daily_restaurant_selection").upsert({
           date: date,
           restaurant_id: topRestaurant.id,
         });
+      } else {
+        setNoMatchFound(true);
       }
     } catch (error: any) {
       console.error("Failed to calculate recommendation:", error);
     }
+  };
+
+  const handleLike = () => {
+    setHasLiked(true);
+    toast.success("Great! Rate your experience");
+  };
+
+  const handleReshuffle = async () => {
+    if (!userId) return;
+    
+    setHasLiked(false);
+    setUserRating(0);
+    setRecommendedRestaurant(null);
+    
+    const today = new Date().toISOString().split("T")[0];
+    
+    // Delete current selection
+    await supabase
+      .from("daily_restaurant_selection")
+      .delete()
+      .eq("date", today);
+    
+    // Recalculate
+    await calculateRecommendation(userId, today);
+    toast.success("Reshuffled recommendation for everyone");
+  };
+
+  const handleRating = async (rating: number) => {
+    if (!recommendedRestaurant) return;
+    
+    setUserRating(rating);
+    
+    // Update restaurant rating
+    const newRating = ((recommendedRestaurant.rating || 0) + rating) / 2;
+    await supabase
+      .from("restaurants")
+      .update({ rating: newRating })
+      .eq("id", recommendedRestaurant.id);
+    
+    toast.success("Rating submitted!");
+  };
+
+  const handleChooseRandom = async () => {
+    if (!userId) return;
+    
+    const today = new Date().toISOString().split("T")[0];
+    const { data: attendingUsers } = await supabase
+      .from("daily_attendance")
+      .select("user_id")
+      .eq("date", today)
+      .eq("is_attending", true);
+
+    if (!attendingUsers || attendingUsers.length === 0) return;
+
+    const userIds = attendingUsers.map((u) => u.user_id);
+    const { data: allFavorites } = await supabase
+      .from("user_favorites")
+      .select("restaurant_id, restaurants(id, name, cuisine_types, dietary_restrictions, description, rating)")
+      .in("user_id", userIds);
+
+    if (!allFavorites || allFavorites.length === 0) return;
+
+    const uniqueRestaurants = Array.from(
+      new Map(allFavorites.map((fav: any) => [fav.restaurants.id, fav.restaurants])).values()
+    );
+
+    const randomRestaurant = uniqueRestaurants[Math.floor(Math.random() * uniqueRestaurants.length)] as any;
+    
+    setRecommendedRestaurant({
+      ...randomRestaurant,
+      score: 0
+    });
+    setNoMatchFound(false);
+
+    await supabase.from("daily_restaurant_selection").upsert({
+      date: today,
+      restaurant_id: randomRestaurant.id,
+    });
+
+    toast.success("Random restaurant selected!");
   };
 
   const toggleAttendance = async (checked: boolean) => {
@@ -273,7 +416,31 @@ const Dashboard = () => {
             </CardContent>
           </Card>
 
-          {recommendedRestaurant && (
+          {noMatchFound ? (
+            <Card className="border-2 border-muted">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5" />
+                  No Perfect Match Found
+                </CardTitle>
+                <CardDescription>
+                  We couldn't find a restaurant that matches everyone's preferences
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <p className="text-muted-foreground">
+                    No restaurants match all attendees' dietary restrictions and cuisine preferences.
+                  </p>
+                  <div className="flex gap-2">
+                    <Button onClick={handleChooseRandom} className="flex-1">
+                      Choose Random
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ) : recommendedRestaurant && (
             <Card className="border-2 border-primary">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -285,7 +452,7 @@ const Dashboard = () => {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
+                <div className="space-y-4">
                   <div>
                     <h3 className="text-2xl font-bold">{recommendedRestaurant.name}</h3>
                     <p className="text-muted-foreground capitalize">
@@ -308,12 +475,39 @@ const Dashboard = () => {
                   <div className="flex items-center gap-4 text-sm">
                     <div className="flex items-center gap-1">
                       <Star className="h-4 w-4 fill-primary text-primary" />
-                      <span className="font-medium">{recommendedRestaurant.rating}</span>
-                    </div>
-                    <div className="text-muted-foreground">
-                      Match: {Math.round((recommendedRestaurant.score / (attendingUsers.length * 100 + 50)) * 100)}%
+                      <span className="font-medium">{recommendedRestaurant.rating?.toFixed(1)}</span>
                     </div>
                   </div>
+
+                  {!hasLiked ? (
+                    <div className="flex gap-2 pt-2">
+                      <Button onClick={handleLike} className="flex-1 gap-2">
+                        <ThumbsUp className="h-4 w-4" />
+                        Like This
+                      </Button>
+                      <Button onClick={handleReshuffle} variant="outline" className="flex-1 gap-2">
+                        <Shuffle className="h-4 w-4" />
+                        Reshuffle
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 pt-2">
+                      <Label>Rate your experience</Label>
+                      <div className="flex gap-1">
+                        {[1, 2, 3, 4, 5].map((rating) => (
+                          <Star
+                            key={rating}
+                            className={`h-8 w-8 cursor-pointer transition-colors ${
+                              rating <= userRating
+                                ? "fill-primary text-primary"
+                                : "text-muted-foreground hover:text-primary"
+                            }`}
+                            onClick={() => handleRating(rating)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
