@@ -15,7 +15,8 @@ interface AttendingUser {
 interface RecommendedRestaurant {
   id: string;
   name: string;
-  cuisine_type: string;
+  cuisine_types: string[];
+  dietary_restrictions: string[];
   description: string;
   rating: number;
   score: number;
@@ -115,7 +116,7 @@ const Dashboard = () => {
 
       const { data: allFavorites } = await supabase
         .from("user_favorites")
-        .select("restaurant_id, restaurants(id, name, cuisine_type, description, rating)")
+        .select("restaurant_id, restaurants(id, name, cuisine_types, dietary_restrictions, description, rating)")
         .in("user_id", userIds);
 
       if (!allFavorites || allFavorites.length === 0) return;
@@ -258,8 +259,20 @@ const Dashboard = () => {
                   <div>
                     <h3 className="text-2xl font-bold">{recommendedRestaurant.name}</h3>
                     <p className="text-muted-foreground capitalize">
-                      {recommendedRestaurant.cuisine_type}
+                      {recommendedRestaurant.cuisine_types.join(", ")}
                     </p>
+                    {recommendedRestaurant.dietary_restrictions && recommendedRestaurant.dietary_restrictions.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {recommendedRestaurant.dietary_restrictions.map((restriction) => (
+                          <span
+                            key={restriction}
+                            className="text-xs px-2 py-1 rounded-full bg-primary/10 text-primary"
+                          >
+                            {restriction.replace("_", " ")}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <p className="text-sm">{recommendedRestaurant.description}</p>
                   <div className="flex items-center gap-4 text-sm">

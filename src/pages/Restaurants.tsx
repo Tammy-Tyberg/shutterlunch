@@ -9,7 +9,8 @@ import { Heart, ChevronRight, Star } from "lucide-react";
 interface Restaurant {
   id: string;
   name: string;
-  cuisine_type: string;
+  cuisine_types: string[];
+  dietary_restrictions: string[];
   description: string;
   rating: number;
 }
@@ -124,11 +125,23 @@ const Restaurants = () => {
               >
                 <CardHeader>
                   <div className="flex items-start justify-between">
-                    <div>
+                    <div className="flex-1">
                       <CardTitle className="text-xl">{restaurant.name}</CardTitle>
                       <CardDescription className="capitalize">
-                        {restaurant.cuisine_type}
+                        {restaurant.cuisine_types.join(", ")}
                       </CardDescription>
+                      {restaurant.dietary_restrictions && restaurant.dietary_restrictions.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {restaurant.dietary_restrictions.map((restriction) => (
+                            <span
+                              key={restriction}
+                              className="text-xs px-2 py-1 rounded-full bg-muted text-muted-foreground"
+                            >
+                              {restriction.replace("_", " ")}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <Heart
                       className={`h-6 w-6 ${
