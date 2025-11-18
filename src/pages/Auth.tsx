@@ -37,9 +37,16 @@ const Auth = () => {
     setLoading(true);
 
     try {
+      const normalizedEmail = email.trim().toLowerCase();
+      const requiredDomain = "@shutterfly.com";
+
+      if (!normalizedEmail.endsWith(requiredDomain)) {
+        throw new Error(`Please use your ${requiredDomain} email address to sign in.`);
+      }
+
       if (isSignUp) {
         const { error } = await supabase.auth.signUp({
-          email,
+          email: normalizedEmail,
           password,
           options: {
             emailRedirectTo: `${window.location.origin}/`,
@@ -53,7 +60,7 @@ const Auth = () => {
         toast.success("Account created! Please check your email.");
       } else {
         const { error } = await supabase.auth.signInWithPassword({
-          email,
+          email: normalizedEmail,
           password,
         });
 
