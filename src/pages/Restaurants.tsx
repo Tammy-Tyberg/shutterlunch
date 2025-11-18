@@ -35,12 +35,48 @@ const Restaurants = () => {
 
   const loadData = async (uid: string) => {
     try {
+      // Get user preferences first
+      const { data: preferencesData } = await supabase
+        .from("user_preferences")
+        .select("preference_type, preference_value")
+        .eq("user_id", uid);
+
+      const userDietaryRestrictions = preferencesData
+        ?.filter((p) => p.preference_type === "dietary")
+        .map((p) => p.preference_value) || [];
+
+      const userCuisineTypes = preferencesData
+        ?.filter((p) => p.preference_type === "cuisine")
+        .map((p) => p.preference_value) || [];
+
+      // Fetch all restaurants
       const { data: restaurantsData, error: restaurantsError } = await supabase
         .from("restaurants")
         .select("*")
         .order("name");
 
       if (restaurantsError) throw restaurantsError;
+
+      // Filter restaurants based on user preferences
+      const filteredRestaurants = (restaurantsData || []).filter((restaurant) => {
+        // If user has dietary restrictions, restaurant must support them
+        if (userDietaryRestrictions.length > 0) {
+          const hasMatchingDietary = userDietaryRestrictions.some((diet) =>
+            restaurant.dietary_restrictions?.includes(diet as any)
+          );
+          if (!hasMatchingDietary) return false;
+        }
+
+        // If user has cuisine preferences, restaurant must match
+        if (userCuisineTypes.length > 0) {
+          const hasMatchingCuisine = userCuisineTypes.some((cuisine) =>
+            restaurant.cuisine_types?.includes(cuisine)
+          );
+          if (!hasMatchingCuisine) return false;
+        }
+
+        return true;
+      });
 
       const { data: favoritesData, error: favoritesError } = await supabase
         .from("user_favorites")
@@ -49,7 +85,7 @@ const Restaurants = () => {
 
       if (favoritesError) throw favoritesError;
 
-      setRestaurants(restaurantsData || []);
+      setRestaurants(filteredRestaurants);
       setFavorites(favoritesData?.map((f) => f.restaurant_id) || []);
     } catch (error: any) {
       toast.error(error.message || "Failed to load restaurants");
