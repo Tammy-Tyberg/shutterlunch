@@ -33,6 +33,7 @@ const Dashboard = () => {
   const [userRating, setUserRating] = useState(0);
   const [hasLiked, setHasLiked] = useState(false);
   const [noMatchFound, setNoMatchFound] = useState(false);
+  const [hasRated, setHasRated] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -117,12 +118,13 @@ const Dashboard = () => {
 
       const { data: attendance } = await supabase
         .from("daily_attendance")
-        .select("is_attending")
+        .select("is_attending, has_rated")
         .eq("user_id", uid)
         .eq("date", today)
         .maybeSingle();
 
       setIsAttending(attendance?.is_attending || false);
+      setHasRated(attendance?.has_rated || false);
 
       const { data: attendingData } = await supabase
         .from("daily_attendance")
@@ -298,9 +300,11 @@ const Dashboard = () => {
   };
 
   const handleRating = async (rating: number) => {
-    if (!recommendedRestaurant) return;
+    if (!recommendedRestaurant || !userId) return;
     
     setUserRating(rating);
+    
+    const today = new Date().toISOString().split("T")[0];
     
     // Update restaurant rating
     const newRating = ((recommendedRestaurant.rating || 0) + rating) / 2;
@@ -309,7 +313,15 @@ const Dashboard = () => {
       .update({ rating: newRating })
       .eq("id", recommendedRestaurant.id);
     
-    toast.success("Rating submitted!");
+    // Mark user as having rated today
+    await supabase
+      .from("daily_attendance")
+      .update({ has_rated: true })
+      .eq("user_id", userId)
+      .eq("date", today);
+    
+    setHasRated(true);
+    toast.success("Rating submitted! Attendance is now locked.");
   };
 
   const handleChooseRandom = async () => {
@@ -430,8 +442,14 @@ const Dashboard = () => {
                   id="attendance"
                   checked={isAttending}
                   onCheckedChange={toggleAttendance}
+                  disabled={hasRated}
                 />
               </div>
+              {hasRated && (
+                <p className="text-sm text-muted-foreground mt-2">
+                  Attendance locked after rating
+                </p>
+              )}
             </CardContent>
           </Card>
 
