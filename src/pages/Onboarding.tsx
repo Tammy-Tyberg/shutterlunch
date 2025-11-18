@@ -32,6 +32,7 @@ const Onboarding = () => {
   const [selectedDietary, setSelectedDietary] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -39,9 +40,34 @@ const Onboarding = () => {
         navigate("/auth");
       } else {
         setUserId(session.user.id);
+        loadExistingPreferences(session.user.id);
       }
     });
   }, [navigate]);
+
+  const loadExistingPreferences = async (uid: string) => {
+    try {
+      const { data: preferences } = await supabase
+        .from("user_preferences")
+        .select("*")
+        .eq("user_id", uid);
+
+      if (preferences && preferences.length > 0) {
+        setIsUpdating(true);
+        const cuisines = preferences
+          .filter((p) => p.preference_type === 'cuisine')
+          .map((p) => p.preference_value);
+        const dietary = preferences
+          .filter((p) => p.preference_type === 'dietary')
+          .map((p) => p.preference_value);
+        
+        setSelectedCuisines(cuisines);
+        setSelectedDietary(dietary);
+      }
+    } catch (error) {
+      console.error("Failed to load preferences:", error);
+    }
+  };
 
   const toggleCuisine = (cuisine: string) => {
     setSelectedCuisines((prev) =>
@@ -67,6 +93,14 @@ const Onboarding = () => {
 
     setLoading(true);
     try {
+      // If updating, delete existing preferences first
+      if (isUpdating) {
+        await supabase
+          .from("user_preferences")
+          .delete()
+          .eq("user_id", userId);
+      }
+
       const preferences = [
         ...selectedCuisines.map((cuisine) => ({
           user_id: userId,
@@ -84,12 +118,31 @@ const Onboarding = () => {
 
       if (error) throw error;
 
-      toast.success("Preferences saved!");
-      navigate("/restaurants");
+      // Recalculate the daily restaurant selection
+      await recalculateDailySelection();
+
+      toast.success(isUpdating ? "Preferences updated!" : "Preferences saved!");
+      navigate("/");
     } catch (error: any) {
       toast.error(error.message || "Failed to save preferences");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const recalculateDailySelection = async () => {
+    try {
+      const today = new Date().toISOString().split("T")[0];
+
+      // Delete existing selection for today
+      await supabase
+        .from("daily_restaurant_selection")
+        .delete()
+        .eq("date", today);
+
+      // The Dashboard will automatically recalculate when users visit
+    } catch (error) {
+      console.error("Failed to reset daily selection:", error);
     }
   };
 
@@ -157,7 +210,7 @@ const Onboarding = () => {
             className="w-full"
             size="lg"
           >
-            Continue
+            {loading ? "Saving..." : isUpdating ? "Update Preferences" : "Continue"}
             <ChevronRight className="ml-2 h-5 w-5" />
           </Button>
         </CardContent>
