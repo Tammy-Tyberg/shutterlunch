@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import { Heart, ChevronRight, Star } from "lucide-react";
+import { Heart, ChevronRight, Star, Settings } from "lucide-react";
 
 interface Restaurant {
   id: string;
@@ -123,10 +123,7 @@ const Restaurants = () => {
   };
 
   const handleContinue = () => {
-    if (favorites.length === 0) {
-      toast.error("Please select at least one favorite restaurant");
-      return;
-    }
+    // Allow continuing even with no favorites
     navigate("/");
   };
 
@@ -148,8 +145,40 @@ const Restaurants = () => {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-          {restaurants.map((restaurant) => {
+        {restaurants.length === 0 ? (
+          <Card className="border-2 border-muted">
+            <CardHeader className="text-center">
+              <CardTitle>No Restaurants Match Your Preferences</CardTitle>
+              <CardDescription>
+                We're sorry, no restaurants match your selected dietary and cuisine preferences.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-muted-foreground text-center">
+                You can update your preferences to see more options, or continue without selecting favorites.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Button 
+                  variant="outline" 
+                  onClick={() => navigate("/onboarding")}
+                  className="flex-1 gap-2"
+                >
+                  <Settings className="h-4 w-4" />
+                  Update Preferences
+                </Button>
+                <Button 
+                  onClick={handleContinue}
+                  className="flex-1 gap-2"
+                >
+                  Continue Anyway
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            {restaurants.map((restaurant) => {
             const isFavorite = favorites.includes(restaurant.id);
             return (
               <Card
@@ -198,21 +227,23 @@ const Restaurants = () => {
               </Card>
             );
           })}
-        </div>
-
-        <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/80 backdrop-blur-sm border-t">
-          <div className="max-w-4xl mx-auto">
-            <Button
-              onClick={handleContinue}
-              disabled={favorites.length === 0}
-              className="w-full"
-              size="lg"
-            >
-              Continue ({favorites.length} selected)
-              <ChevronRight className="ml-2 h-5 w-5" />
-            </Button>
           </div>
-        </div>
+        )}
+
+        {restaurants.length > 0 && (
+          <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/80 backdrop-blur-sm border-t">
+            <div className="max-w-4xl mx-auto">
+              <Button
+                onClick={handleContinue}
+                className="w-full"
+                size="lg"
+              >
+                Continue ({favorites.length} selected)
+                <ChevronRight className="ml-2 h-5 w-5" />
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
