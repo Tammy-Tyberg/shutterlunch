@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { LogOut, Users, Star, TrendingUp } from "lucide-react";
+import { LogOut, Users, Star, TrendingUp, Settings } from "lucide-react";
 
 interface AttendingUser {
   name: string;
@@ -104,6 +104,23 @@ const Dashboard = () => {
 
   const calculateRecommendation = async (uid: string, date: string) => {
     try {
+      // First check if there's already a daily selection
+      const { data: existingSelection } = await supabase
+        .from("daily_restaurant_selection")
+        .select("restaurant_id, restaurants(id, name, cuisine_types, dietary_restrictions, description, rating)")
+        .eq("date", date)
+        .maybeSingle();
+
+      if (existingSelection?.restaurants) {
+        const restaurant = existingSelection.restaurants as any;
+        setRecommendedRestaurant({
+          ...restaurant,
+          score: 0 // We'll calculate this for display
+        });
+        return;
+      }
+
+      // If no selection exists, calculate the best restaurant
       const { data: attendingUsers } = await supabase
         .from("daily_attendance")
         .select("user_id")
@@ -141,7 +158,14 @@ const Dashboard = () => {
         .sort((a, b) => b.score - a.score);
 
       if (scored.length > 0) {
-        setRecommendedRestaurant(scored[0]);
+        const topRestaurant = scored[0];
+        setRecommendedRestaurant(topRestaurant);
+
+        // Save the selection to the database so everyone sees it
+        await supabase.from("daily_restaurant_selection").upsert({
+          date: date,
+          restaurant_id: topRestaurant.id,
+        });
       }
     } catch (error: any) {
       console.error("Failed to calculate recommendation:", error);
@@ -192,10 +216,16 @@ const Dashboard = () => {
             <h1 className="text-4xl font-bold mb-2">ShutterLunch</h1>
             <p className="text-muted-foreground">Where should we eat today?</p>
           </div>
-          <Button variant="outline" onClick={handleLogout}>
-            <LogOut className="h-4 w-4 mr-2" />
-            Logout
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => navigate("/onboarding")}>
+              <Settings className="h-4 w-4 mr-2" />
+              Settings
+            </Button>
+            <Button variant="outline" onClick={handleLogout}>
+              <LogOut className="h-4 w-4 mr-2" />
+              Logout
+            </Button>
+          </div>
         </div>
 
         <div className="grid gap-6">
