@@ -257,16 +257,18 @@ const Dashboard = () => {
 
           // Check dietary restrictions - must match all if user has them
           if (prefs.dietary.length > 0) {
+            const restaurantDietary = restaurant.dietary_restrictions || [];
             const hasMatchingDietary = prefs.dietary.every((diet) =>
-              restaurant.dietary_restrictions?.includes(diet)
+              restaurantDietary.includes(diet)
             );
             if (!hasMatchingDietary) matches = false;
           }
 
           // Check cuisine types - must match at least one if user has them
           if (matches && prefs.cuisine.length > 0) {
+            const restaurantCuisine = restaurant.cuisine_types || [];
             const hasMatchingCuisine = prefs.cuisine.some((cuisine) =>
-              restaurant.cuisine_types?.includes(cuisine)
+              restaurantCuisine.includes(cuisine)
             );
             if (!hasMatchingCuisine) matches = false;
           }
