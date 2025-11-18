@@ -83,17 +83,6 @@ const Dashboard = () => {
         return;
       }
 
-      const { data: favorites } = await supabase
-        .from("user_favorites")
-        .select("*")
-        .eq("user_id", uid)
-        .limit(1);
-
-      if (!favorites || favorites.length === 0) {
-        navigate("/restaurants");
-        return;
-      }
-
       loadDashboardData(uid);
     } catch (error: any) {
       toast.error(error.message || "Failed to load data");
