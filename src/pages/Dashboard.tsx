@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { LogOut, Users, Star, TrendingUp, Settings, ThumbsUp, Shuffle } from "lucide-react";
+import { LogOut, Users, Star, TrendingUp, Settings, ThumbsUp, ThumbsDown, Shuffle } from "lucide-react";
 
 interface AttendingUser {
   name: string;
@@ -31,7 +31,8 @@ const Dashboard = () => {
   const [userId, setUserId] = useState<string | null>(null);
   const [userName, setUserName] = useState<string>("");
   const [userRating, setUserRating] = useState(0);
-  const [hasLiked, setHasLiked] = useState(false);
+  const [feedbackStatus, setFeedbackStatus] = useState<"liked" | "disliked" | null>(null);
+  const [hasSubmittedFeedback, setHasSubmittedFeedback] = useState(false);
   const [noMatchFound, setNoMatchFound] = useState(false);
 
   useEffect(() => {
@@ -125,12 +126,19 @@ const Dashboard = () => {
 
       const { data: attendance } = await supabase
         .from("daily_attendance")
-        .select("is_attending")
+        .select("is_attending, has_rated, feedback")
         .eq("user_id", uid)
         .eq("date", today)
         .maybeSingle();
 
       setIsAttending(attendance?.is_attending || false);
+      setHasSubmittedFeedback(attendance?.has_rated || false);
+      const feedbackValue = attendance?.feedback;
+      if (feedbackValue === "liked" || feedbackValue === "disliked") {
+        setFeedbackStatus(feedbackValue);
+      } else {
+        setFeedbackStatus(null);
+      }
 
       const { data: attendingData } = await supabase
         .from("daily_attendance")
@@ -281,15 +289,55 @@ const Dashboard = () => {
     }
   };
 
-  const handleLike = () => {
-    setHasLiked(true);
-    toast.success("Great! Rate your experience");
+  const handleFeedback = async (choice: "liked" | "disliked") => {
+    if (!userId) return;
+    if (hasSubmittedFeedback) {
+      toast.error("You've already shared feedback for today's lunch.");
+      return;
+    }
+    if (!isAttending) {
+      toast.error("Please mark yourself as attending before sharing feedback.");
+      return;
+    }
+
+    const today = new Date().toISOString().split("T")[0];
+
+    try {
+      const { error } = await supabase
+        .from("daily_attendance")
+        .upsert(
+          {
+            user_id: userId,
+            date: today,
+            is_attending: true,
+            has_rated: true,
+            feedback: choice,
+          },
+          { onConflict: "user_id,date" }
+        );
+
+      if (error) throw error;
+
+      setHasSubmittedFeedback(true);
+      setFeedbackStatus(choice);
+      setUserRating(0);
+      toast.success(
+        choice === "liked"
+          ? "Glad you enjoyed it! Feel free to add a rating."
+          : "Thanks for the feedback! We'll keep that in mind."
+      );
+    } catch (error: any) {
+      toast.error(error.message || "Failed to submit feedback");
+    }
   };
 
   const handleReshuffle = async () => {
     if (!userId) return;
+    if (hasSubmittedFeedback) {
+      toast.error("Lunch feedback already submitted for today.");
+      return;
+    }
     
-    setHasLiked(false);
     setUserRating(0);
     const currentRestaurantId = recommendedRestaurant?.id;
     setRecommendedRestaurant(null);
@@ -406,7 +454,7 @@ const Dashboard = () => {
   };
 
   const handleRating = async (rating: number) => {
-    if (!recommendedRestaurant) return;
+    if (!recommendedRestaurant || feedbackStatus !== "liked") return;
     
     setUserRating(rating);
     
@@ -422,6 +470,10 @@ const Dashboard = () => {
 
   const handleChooseRandom = async () => {
     if (!userId) return;
+    if (hasSubmittedFeedback) {
+      toast.error("Lunch feedback already submitted for today.");
+      return;
+    }
     
     console.log("Choose random clicked");
     const today = new Date().toISOString().split("T")[0];
@@ -477,17 +529,26 @@ const Dashboard = () => {
 
   const toggleAttendance = async (checked: boolean) => {
     if (!userId) return;
+    if (hasSubmittedFeedback) {
+      toast.error("Lunch feedback already submitted for today. Attendance is locked.");
+      return;
+    }
 
     const today = new Date().toISOString().split("T")[0];
 
     console.log("Toggle attendance:", checked, "User:", userId);
 
     try {
-      const { error } = await supabase.from("daily_attendance").upsert({
-        user_id: userId,
-        date: today,
-        is_attending: checked,
-      });
+      const { error } = await supabase
+        .from("daily_attendance")
+        .upsert(
+          {
+            user_id: userId,
+            date: today,
+            is_attending: checked,
+          },
+          { onConflict: "user_id,date" }
+        );
 
       if (error) {
         console.error("Attendance error:", error);
@@ -552,14 +613,23 @@ const Dashboard = () => {
               <CardDescription>Will you join us for lunch today?</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="flex items-center justify-between">
-                <Label htmlFor="attendance" className="text-lg">
-                  I'm attending today
-                </Label>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <Label htmlFor="attendance" className="text-lg">
+                    I'm attending today
+                  </Label>
+                  {hasSubmittedFeedback && (
+                    <p className="text-sm text-muted-foreground">
+                      Feedback submitted – attendance locked for today.
+                    </p>
+                  )}
+                </div>
                 <Switch
                   id="attendance"
                   checked={isAttending}
                   onCheckedChange={toggleAttendance}
+                  disabled={hasSubmittedFeedback}
+                  aria-disabled={hasSubmittedFeedback}
                 />
               </div>
             </CardContent>
@@ -653,18 +723,38 @@ const Dashboard = () => {
                     </div>
                   </div>
 
-                  {!hasLiked ? (
-                    <div className="flex gap-2 pt-2">
-                      <Button onClick={handleLike} className="flex-1 gap-2">
-                        <ThumbsUp className="h-4 w-4" />
-                        Like This
-                      </Button>
-                      <Button onClick={handleReshuffle} variant="outline" className="flex-1 gap-2">
+                  {feedbackStatus === null ? (
+                    <div className="space-y-2 pt-2">
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <Button
+                          onClick={() => handleFeedback("liked")}
+                          className="flex-1 gap-2"
+                          disabled={!isAttending || hasSubmittedFeedback}
+                        >
+                          <ThumbsUp className="h-4 w-4" />
+                          Like It
+                        </Button>
+                        <Button
+                          onClick={() => handleFeedback("disliked")}
+                          variant="outline"
+                          className="flex-1 gap-2"
+                          disabled={!isAttending || hasSubmittedFeedback}
+                        >
+                          <ThumbsDown className="h-4 w-4" />
+                          Don't Like
+                        </Button>
+                      </div>
+                      <Button
+                        onClick={handleReshuffle}
+                        variant="ghost"
+                        className="w-full gap-2"
+                        disabled={hasSubmittedFeedback}
+                      >
                         <Shuffle className="h-4 w-4" />
                         Reshuffle
                       </Button>
                     </div>
-                  ) : (
+                  ) : feedbackStatus === "liked" ? (
                     <div className="space-y-2 pt-2">
                       <Label>Rate your experience</Label>
                       <div className="flex gap-1">
@@ -681,6 +771,10 @@ const Dashboard = () => {
                         ))}
                       </div>
                     </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground pt-2">
+                      Thanks for the feedback! We'll use it to improve tomorrow's recommendation.
+                    </p>
                   )}
                 </div>
               </CardContent>
