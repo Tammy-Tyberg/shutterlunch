@@ -124,8 +124,11 @@ export type Database = {
       restaurants: {
         Row: {
           created_at: string | null
-          cuisine_type: Database["public"]["Enums"]["food_preference"]
+          cuisine_types: string[]
           description: string | null
+          dietary_restrictions:
+            | Database["public"]["Enums"]["dietary_restriction"][]
+            | null
           id: string
           image_url: string | null
           name: string
@@ -133,8 +136,11 @@ export type Database = {
         }
         Insert: {
           created_at?: string | null
-          cuisine_type: Database["public"]["Enums"]["food_preference"]
+          cuisine_types?: string[]
           description?: string | null
+          dietary_restrictions?:
+            | Database["public"]["Enums"]["dietary_restriction"][]
+            | null
           id?: string
           image_url?: string | null
           name: string
@@ -142,8 +148,11 @@ export type Database = {
         }
         Update: {
           created_at?: string | null
-          cuisine_type?: Database["public"]["Enums"]["food_preference"]
+          cuisine_types?: string[]
           description?: string | null
+          dietary_restrictions?:
+            | Database["public"]["Enums"]["dietary_restriction"][]
+            | null
           id?: string
           image_url?: string | null
           name?: string
@@ -191,19 +200,22 @@ export type Database = {
         Row: {
           created_at: string | null
           id: string
-          preference: Database["public"]["Enums"]["food_preference"]
+          preference_type: string
+          preference_value: string
           user_id: string
         }
         Insert: {
           created_at?: string | null
           id?: string
-          preference: Database["public"]["Enums"]["food_preference"]
+          preference_type: string
+          preference_value: string
           user_id: string
         }
         Update: {
           created_at?: string | null
           id?: string
-          preference?: Database["public"]["Enums"]["food_preference"]
+          preference_type?: string
+          preference_value?: string
           user_id?: string
         }
         Relationships: [
@@ -224,6 +236,12 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
+      dietary_restriction:
+        | "halal"
+        | "kosher"
+        | "vegan"
+        | "vegetarian"
+        | "gluten_free"
       food_preference:
         | "italian"
         | "chinese"
@@ -363,6 +381,13 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      dietary_restriction: [
+        "halal",
+        "kosher",
+        "vegan",
+        "vegetarian",
+        "gluten_free",
+      ],
       food_preference: [
         "italian",
         "chinese",

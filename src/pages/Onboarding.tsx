@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { ChevronRight } from "lucide-react";
 
-const foodPreferences = [
+const cuisineTypes = [
   { value: "italian", label: "🍝 Italian" },
   { value: "chinese", label: "🥡 Chinese" },
   { value: "japanese", label: "🍱 Japanese" },
@@ -16,15 +16,20 @@ const foodPreferences = [
   { value: "indian", label: "🍛 Indian" },
   { value: "american", label: "🍔 American" },
   { value: "mediterranean", label: "🥗 Mediterranean" },
+];
+
+const dietaryRestrictions = [
   { value: "vegetarian", label: "🥕 Vegetarian" },
   { value: "vegan", label: "🌱 Vegan" },
   { value: "halal", label: "☪️ Halal" },
   { value: "kosher", label: "✡️ Kosher" },
+  { value: "gluten_free", label: "🌾 Gluten Free" },
 ];
 
 const Onboarding = () => {
   const navigate = useNavigate();
-  const [selectedPreferences, setSelectedPreferences] = useState<string[]>([]);
+  const [selectedCuisines, setSelectedCuisines] = useState<string[]>([]);
+  const [selectedDietary, setSelectedDietary] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
 
@@ -38,29 +43,44 @@ const Onboarding = () => {
     });
   }, [navigate]);
 
-  const togglePreference = (preference: string) => {
-    setSelectedPreferences((prev) =>
-      prev.includes(preference)
-        ? prev.filter((p) => p !== preference)
-        : [...prev, preference]
+  const toggleCuisine = (cuisine: string) => {
+    setSelectedCuisines((prev) =>
+      prev.includes(cuisine)
+        ? prev.filter((p) => p !== cuisine)
+        : [...prev, cuisine]
+    );
+  };
+
+  const toggleDietary = (dietary: string) => {
+    setSelectedDietary((prev) =>
+      prev.includes(dietary)
+        ? prev.filter((p) => p !== dietary)
+        : [...prev, dietary]
     );
   };
 
   const handleSubmit = async () => {
-    if (selectedPreferences.length === 0) {
-      toast.error("Please select at least one preference");
+    if (selectedCuisines.length === 0) {
+      toast.error("Please select at least one cuisine type");
       return;
     }
 
     setLoading(true);
     try {
-      // Insert preferences
-      const { error } = await supabase.from("user_preferences").insert(
-        selectedPreferences.map((pref) => ({
+      const preferences = [
+        ...selectedCuisines.map((cuisine) => ({
           user_id: userId,
-          preference: pref as "italian" | "chinese" | "japanese" | "mexican" | "indian" | "american" | "mediterranean" | "vegetarian" | "vegan" | "halal" | "kosher",
-        }))
-      );
+          preference_type: 'cuisine',
+          preference_value: cuisine,
+        })),
+        ...selectedDietary.map((dietary) => ({
+          user_id: userId,
+          preference_type: 'dietary',
+          preference_value: dietary,
+        })),
+      ];
+
+      const { error } = await supabase.from("user_preferences").insert(preferences);
 
       if (error) throw error;
 
@@ -79,32 +99,61 @@ const Onboarding = () => {
         <CardHeader className="text-center">
           <CardTitle className="text-3xl">Select Your Food Preferences</CardTitle>
           <CardDescription className="text-base">
-            Choose the cuisines you enjoy
+            Choose your favorite cuisines and any dietary restrictions
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            {foodPreferences.map((pref) => (
-              <div
-                key={pref.value}
-                onClick={() => togglePreference(pref.value)}
-                className={`flex items-center space-x-3 p-4 rounded-lg border-2 transition-all cursor-pointer ${
-                  selectedPreferences.includes(pref.value)
-                    ? "border-primary bg-primary/5"
-                    : "border-border hover:border-primary/50"
-                }`}
-              >
-                <Checkbox
-                  checked={selectedPreferences.includes(pref.value)}
-                  onCheckedChange={() => togglePreference(pref.value)}
-                />
-                <Label className="cursor-pointer text-base">{pref.label}</Label>
-              </div>
-            ))}
+        <CardContent className="space-y-8">
+          {/* Cuisine Types Section */}
+          <div className="space-y-3">
+            <h3 className="text-lg font-semibold">Cuisine Types</h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {cuisineTypes.map((cuisine) => (
+                <div
+                  key={cuisine.value}
+                  onClick={() => toggleCuisine(cuisine.value)}
+                  className={`flex items-center space-x-3 p-4 rounded-lg border-2 transition-all cursor-pointer ${
+                    selectedCuisines.includes(cuisine.value)
+                      ? "border-primary bg-primary/5"
+                      : "border-border hover:border-primary/50"
+                  }`}
+                >
+                  <Checkbox
+                    checked={selectedCuisines.includes(cuisine.value)}
+                    onCheckedChange={() => toggleCuisine(cuisine.value)}
+                  />
+                  <Label className="cursor-pointer text-base">{cuisine.label}</Label>
+                </div>
+              ))}
+            </div>
           </div>
+
+          {/* Dietary Restrictions Section */}
+          <div className="space-y-3">
+            <h3 className="text-lg font-semibold">Dietary Restrictions (Optional)</h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {dietaryRestrictions.map((dietary) => (
+                <div
+                  key={dietary.value}
+                  onClick={() => toggleDietary(dietary.value)}
+                  className={`flex items-center space-x-3 p-4 rounded-lg border-2 transition-all cursor-pointer ${
+                    selectedDietary.includes(dietary.value)
+                      ? "border-primary bg-primary/5"
+                      : "border-border hover:border-primary/50"
+                  }`}
+                >
+                  <Checkbox
+                    checked={selectedDietary.includes(dietary.value)}
+                    onCheckedChange={() => toggleDietary(dietary.value)}
+                  />
+                  <Label className="cursor-pointer text-base">{dietary.label}</Label>
+                </div>
+              ))}
+            </div>
+          </div>
+
           <Button
             onClick={handleSubmit}
-            disabled={loading || selectedPreferences.length === 0}
+            disabled={loading || selectedCuisines.length === 0}
             className="w-full"
             size="lg"
           >
