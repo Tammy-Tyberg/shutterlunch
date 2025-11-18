@@ -29,6 +29,7 @@ const Dashboard = () => {
   const [recommendedRestaurant, setRecommendedRestaurant] = useState<RecommendedRestaurant | null>(null);
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
+  const [userName, setUserName] = useState<string>("");
   const [userRating, setUserRating] = useState(0);
   const [hasLiked, setHasLiked] = useState(false);
   const [noMatchFound, setNoMatchFound] = useState(false);
@@ -42,6 +43,31 @@ const Dashboard = () => {
         checkOnboarding(session.user.id);
       }
     });
+
+    // Set up realtime listener for attendance changes
+    const channel = supabase
+      .channel('attendance-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'daily_attendance'
+        },
+        () => {
+          // Reload data when any attendance changes
+          supabase.auth.getSession().then(({ data: { session } }) => {
+            if (session) {
+              loadDashboardData(session.user.id);
+            }
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [navigate]);
 
   const checkOnboarding = async (uid: string) => {
@@ -77,6 +103,17 @@ const Dashboard = () => {
   const loadDashboardData = async (uid: string) => {
     try {
       const today = new Date().toISOString().split("T")[0];
+
+      // Get user profile
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("name")
+        .eq("id", uid)
+        .single();
+
+      if (profile) {
+        setUserName(profile.name);
+      }
 
       const { data: attendance } = await supabase
         .from("daily_attendance")
@@ -318,7 +355,6 @@ const Dashboard = () => {
   const toggleAttendance = async (checked: boolean) => {
     if (!userId) return;
 
-    setIsAttending(checked);
     const today = new Date().toISOString().split("T")[0];
 
     try {
@@ -330,11 +366,13 @@ const Dashboard = () => {
 
       if (error) throw error;
 
+      setIsAttending(checked);
       toast.success(checked ? "You're attending today!" : "Attendance updated");
-      loadDashboardData(userId);
+      
+      // Reload data to update the attendees list and recalculate recommendation
+      await loadDashboardData(userId);
     } catch (error: any) {
       toast.error(error.message || "Failed to update attendance");
-      setIsAttending(!checked);
     }
   };
 
@@ -357,14 +395,20 @@ const Dashboard = () => {
         <div className="flex justify-between items-center mb-8">
           <div>
             <h1 className="text-4xl font-bold mb-2">ShutterLunch</h1>
-            <p className="text-muted-foreground">Where should we eat today?</p>
+            <p className="text-muted-foreground">
+              {userName ? `Hi, ${userName} - welcome back!` : "Where should we eat today?"}
+            </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-col sm:flex-row">
             <Button variant="outline" onClick={() => navigate("/onboarding")}>
-              <Settings className="h-4 w-4 mr-2" />
-              Settings
+              <Settings className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Settings</span>
             </Button>
-            <Button variant="outline" onClick={handleLogout}>
+            <Button variant="outline" onClick={handleLogout} className="sm:hidden">
+              <LogOut className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Logout</span>
+            </Button>
+            <Button variant="outline" onClick={handleLogout} className="hidden sm:flex">
               <LogOut className="h-4 w-4 mr-2" />
               Logout
             </Button>
