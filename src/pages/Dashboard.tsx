@@ -308,7 +308,6 @@ const Dashboard = () => {
             date: today,
             is_attending: true,
             has_rated: true,
-            feedback: choice,
           },
           { onConflict: "user_id,date" }
         );
